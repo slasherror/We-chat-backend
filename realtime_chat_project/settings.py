@@ -12,6 +12,9 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 from pathlib import Path
 import os
+from dotenv import load_dotenv
+# Load environment variables from .env file
+load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -182,4 +185,4 @@ ASGI_APPLICATION = "realtime_chat_project.asgi.application"
 
 
 # ChatGPT API Configuration
-OPENAI_API_KEY = ''  # Replace with your actual OpenAI API key
+OPENAI_API_KEY = os.getenv("CHATGPT_API_KEY")  # Replace with your actual OpenAI API key

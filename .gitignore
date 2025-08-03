@@ -7,3 +7,5 @@ __pycache__/
 db.sqlite3
 accounts/__pycache__/
 chat/__pycache__/
+.env/
+*.env

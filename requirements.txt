@@ -39,3 +39,4 @@ tzdata==2024.2
 urllib3==2.3.0
 zope.interface==7.2
 groq==0.4.2
+dotenv
