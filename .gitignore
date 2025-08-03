@@ -1,1 +1,9 @@
-venv
+venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+db.sqlite3
+accounts/__pycache__/
+chat/__pycache__/
