@@ -183,6 +183,19 @@ CHANNEL_LAYERS = {
 # ASGI Configuration
 ASGI_APPLICATION = "realtime_chat_project.asgi.application"
 
+# settings.py
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_HOST_USER = os.getenv('Email')  
+EMAIL_HOST_PASSWORD = os.getenv('password')
+EMAIL_USE_TLS = True
+DEFAULT_FROM_EMAIL = 'We_Talk Web <mushfiqurrahaman78@gmail.com>'
+
+
+
+
 
 # ChatGPT API Configuration
 OPENAI_API_KEY = os.getenv("CHATGPT_API_KEY")  # Replace with your actual OpenAI API key

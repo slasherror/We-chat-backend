@@ -7,6 +7,10 @@ from rest_framework.permissions import AllowAny
 from rest_framework.serializers import ModelSerializer, ValidationError
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import CustomTokenObtainPairSerializer
+from django.contrib.auth import login, authenticate, logout
+from django.core.mail import send_mail
+from django.utils import timezone
+from django.conf import settings
 
 class RegisterSerializer(ModelSerializer):
     class Meta:
@@ -33,12 +37,18 @@ class RegisterView(APIView):
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
-            print("HERE")
             serializer.save()
             return Response({"message": "User registered successfully!"}, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data, context={"request": request})
+        try:
+            serializer.is_valid(raise_exception=True)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_401_UNAUTHORIZED)
+        return Response(serializer.validated_data, status=status.HTTP_200_OK)
