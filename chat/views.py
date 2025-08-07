@@ -53,6 +53,10 @@ def start_chat(request):
     chat_data['current_user'] = request.user.username
     chat_data['current_user_id'] = request.user.id
     chat_data['other_user'] = [participant.username for participant in chat.participants.all() if participant.username != request.user.username]
+    # Add other_user_id for online status tracking
+    other_participants = [participant for participant in chat.participants.all() if participant.id != request.user.id]
+    if other_participants:
+        chat_data['other_user_id'] = other_participants[0].id
     return Response(chat_data)
 
 @api_view(["GET"])
@@ -98,6 +102,10 @@ def get_chats(request):
         chat_data['current_user'] = request.user.username
         chat_data['current_user_id'] = request.user.id
         chat_data['other_user'] = [participant.username for participant in chat.participants.all() if participant.username != request.user.username]
+        # Add other_user_id for online status tracking
+        other_participants = [participant for participant in chat.participants.all() if participant.id != request.user.id]
+        if other_participants:
+            chat_data['other_user_id'] = other_participants[0].id
         chat_data["public_key"] = chat.public_key
         chat_data["private_key"] = chat.private_key
         results.append(chat_data)

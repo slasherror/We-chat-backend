@@ -1,46 +1,73 @@
 from channels.generic.websocket import AsyncWebsocketConsumer
-import json
-from .models import Chat, Message, KeyPair
 from channels.db import database_sync_to_async
 from django.contrib.auth.models import User
-from Crypto.Cipher import PKCS1_OAEP, AES
-from Crypto.PublicKey import RSA
-import base64
+import json
+from .models import Chat, Message, KeyPair
 from chat.utils import encrypt_message, decrypt_final_audio, encrypt_final_audio
-import io
-from Crypto.Random import get_random_bytes
-from django.core.files.storage import FileSystemStorage
-from django.core.files.base import ContentFile
-import os
-from asgiref.sync import async_to_sync
+from base64 import b64decode
 
-from Crypto.Util.Padding import pad
-from base64 import b64encode, b64decode
-
+# ✅ Global presence tracker
+ONLINE_USERS = {}
 
 class ChatConsumer(AsyncWebsocketConsumer):
-   
     async def connect(self):
-  
         self.chat_id = self.scope['url_route']['kwargs']['chat_id']
-        # print("Self : ",self.scope)
         self.chat_group_name = f'chat_{self.chat_id}'
+        self.presence_group = "presence_room"
+
+        self.user = self.scope["user"]
+        self.user_id = self.user.id
+
+        await self.accept()  # ✅ Accept the WebSocket first!
+
         await self.channel_layer.group_add(self.chat_group_name, self.channel_name)
-        await self.accept()
+        await self.channel_layer.group_add(self.presence_group, self.channel_name)
+
+        # ✅ Mark user as online
+        ONLINE_USERS[self.user_id] = self.channel_name
+
+        # ✅ Send list of all online users to the current user
+        print(f"User {self.user_id} connected. Online users: {list(ONLINE_USERS.keys())}")
+        await self.send(text_data=json.dumps({
+            "type": "initial-online-list",
+            "user_ids": list(ONLINE_USERS.keys())
+        }))
+
+        # ✅ Notify others about your presence
+        await self.broadcast_user_status(online=True)
+
+
 
     async def disconnect(self, close_code):
-        await self.channel_layer.group_discard(
-            self.chat_group_name,
-            self.channel_name
-        )
-    
-  
+        await self.channel_layer.group_discard(self.chat_group_name, self.channel_name)
+        await self.channel_layer.group_discard(self.presence_group, self.channel_name)
 
-    async def get_user_by_email(self, email):
-        return await User.objects.get(email=email)
+        if self.user_id in ONLINE_USERS:
+            print(f"User {self.user_id} disconnected")
+            del ONLINE_USERS[self.user_id]
+            await self.broadcast_user_status(online=False)
+
+
+
+    async def broadcast_user_status(self, online):
+        await self.channel_layer.group_send(
+            self.presence_group,
+            {
+                "type": "user_status",
+                "user_id": self.user_id,
+                "online": online
+            }
+        )
+
+    async def user_status(self, event):
+        print(f"Broadcasting user status: {event['user_id']} is {event['online']}")
+        await self.send(text_data=json.dumps({
+            "type": "user-status",
+            "userId": event["user_id"],
+            "online": event["online"]
+        }))
 
     async def receive(self, text_data):
-
         data = json.loads(text_data)
         event_type = data["type"]
         chat = await database_sync_to_async(Chat.objects.get)(id=self.chat_id)
@@ -59,35 +86,21 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     "sender": sender_id,
                 }
             )
-       
-        if event_type == "message":
-        
+
+        elif event_type == "message":
             message = data["message"]
             sender_id = self.scope["user"].id
             recipient_id = data["recipient"]
 
-            # print(sender_id)
-            # Fetch the chat and sender asynchronously
-            chat = await database_sync_to_async(Chat.objects.get)(id=self.chat_id)
             sender = await database_sync_to_async(User.objects.get)(id=sender_id)
-
-            # public_key = await database_sync_to_async(KeyPair.objects.get)(user=recipient_id)
-            # public_key = public_key.public_key
-
             encrypted_message = encrypt_message(chat.public_key, message)
 
-
-
-            # Store encrypted message in database
             new_message = await database_sync_to_async(Message.objects.create)(
                 chat=chat,
                 sender=sender,
                 text=encrypted_message
-           
             )
 
-
-            # Send the message to the WebSocket group
             await self.channel_layer.group_send(
                 self.chat_group_name,
                 {
@@ -100,18 +113,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
             )
 
         elif event_type == "voice":
-            # complete the code here
             sender_id = self.scope["user"].id
-   
-            audio_data = b64decode(data["voice"])  # base64-decoded audio blob
             recipient_id = data["recipient"]
+            audio_data = b64decode(data["voice"])
+
             sender = await database_sync_to_async(User.objects.get)(id=sender_id)
-            chat = await database_sync_to_async(Chat.objects.get)(id=self.chat_id)
-            
-            
+
             encrypted_audio, encrypted_aes_key, iv = encrypt_final_audio(audio_data, chat.public_key)
 
-            # Save the encrypted audio file to the database
             message = await database_sync_to_async(Message.objects.create)(
                 chat=chat,
                 sender=sender,
@@ -121,27 +130,19 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 iv=iv
             )
 
+            decrypted_audio = decrypt_final_audio(encrypted_audio, encrypted_aes_key, iv, chat.private_key)
 
-            decrypted_audio = decrypt_final_audio(encrypted_audio,encrypted_aes_key,iv,chat.private_key)
-
-
-
-
-            # Send back the audio URL for instant playback
             await self.channel_layer.group_send(
                 self.chat_group_name,
-                {   
+                {
                     'type': 'voice_messages',
                     'id': message.id,
                     'sender': sender_id,
-                    'message':'',
+                    'message': '',
                     'recipient': recipient_id,
                     'audio': decrypted_audio,
-               
                 }
             )
-
-
 
         elif event_type == "typing":
             typing_status = data["is_typing"]
@@ -155,49 +156,35 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 }
             )
 
-
     async def chat_message(self, event):
-        message = event["message"]
-        sender = event["sender"]
-        voice_message = event.get("audio_url", "")
-        
-
         await self.send(text_data=json.dumps({
             "type": "message",
             "id": event["id"],
-            "text": message,
-            "voice_url": voice_message,
-            "sender": sender,
-        }))
-
-    async def chat_typing(self, event):
-        is_typing = event["is_typing"]
-        sender = event["sender"]
-
-        await self.send(text_data=json.dumps({
-            "type": "typing",
-            "is_typing": is_typing,
-            "sender": sender,
+            "text": event["message"],
+            "voice_url": event.get("audio_url", ""),
+            "sender": event["sender"],
         }))
 
     async def voice_messages(self, event):
- 
-        sender = event["sender"]
-
         await self.send(text_data=json.dumps({
-
             "type": "voice_message",
             "id": event["id"],
             "text": "",
             "audio": event["audio"],
-   
-            "sender": sender,
+            "sender": event["sender"],
         }))
-    
+
     async def delete_message(self, event):
         await self.send(text_data=json.dumps({
             "type": "delete",
             "id": event["id"],
             "message": event["message"],
+            "sender": event["sender"],
+        }))
+
+    async def chat_typing(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "typing",
+            "is_typing": event["is_typing"],
             "sender": event["sender"],
         }))
