@@ -57,6 +57,9 @@ def start_chat(request):
     other_participants = [participant for participant in chat.participants.all() if participant.id != request.user.id]
     if other_participants:
         chat_data['other_user_id'] = other_participants[0].id
+    # Provide keys for client-side encryption/decryption
+    chat_data["public_key"] = chat.public_key
+    chat_data["private_key"] = chat.private_key
     return Response(chat_data)
 
 @api_view(["GET"])
@@ -67,29 +70,26 @@ def get_chat_messages(request, chat_id):
         return Response({"error": "Chat not found."}, status=404)
 
     messages = Message.objects.filter(chat=chat).order_by("timestamp")
-    private_key = chat.private_key
 
-    decrypted_messages = []
-
+    # Return ciphertext and encrypted audio as-is; clients will decrypt
+    serialized = []
     for message in messages:
-        decrypted_text = ""
-        decrypted_audio = None
-
-        if message.text:
-            decrypted_text = decrypt_message(private_key,message.text)
-
-        if message.encrypted_aes_key:
-            decrypted_audio = decrypt_final_audio(message.encrypted_audio, message.encrypted_aes_key, message.iv, private_key)
-
-        decrypted_messages.append({
+        item = {
             "id": message.id,
             "sender": message.sender.id,
-            "text": decrypted_text,
-            "voice_url": decrypted_audio,  
+            "text": message.text or "",  # ciphertext if present
+            "voice_url": None,  # keep field for compatibility when playing decrypted audio in client
             "timestamp": message.timestamp.isoformat(),
-        })
+        }
+        if message.encrypted_aes_key and message.encrypted_audio and message.iv:
+            item.update({
+                "encrypted_audio": base64.b64encode(message.encrypted_audio).decode('utf-8'),
+                "encrypted_aes_key": base64.b64encode(message.encrypted_aes_key).decode('utf-8'),
+                "iv": base64.b64encode(message.iv).decode('utf-8'),
+            })
+        serialized.append(item)
 
-    return Response(decrypted_messages, status=200)
+    return Response(serialized, status=200)
 
 @api_view(["GET"])
 def get_chats(request):
@@ -106,6 +106,7 @@ def get_chats(request):
         other_participants = [participant for participant in chat.participants.all() if participant.id != request.user.id]
         if other_participants:
             chat_data['other_user_id'] = other_participants[0].id
+        # Return keys required for client-side crypto
         chat_data["public_key"] = chat.public_key
         chat_data["private_key"] = chat.private_key
         results.append(chat_data)
@@ -161,6 +162,37 @@ def transcribe_audio(request):
             except Exception as e:
                 print(f"Error deleting temporary file: {e}")
         
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def tts_voice(request):
+    try:
+        text = request.data.get('text', '').strip()
+        voice_model = request.data.get('voice', 'aura-asteria-en')  # default Deepgram voice
+        if not text:
+            return Response({'error': 'Text is required'}, status=400)
+
+        headers = {
+            'Authorization': f'Token {settings.DEEPGRAM_API_KEY}',
+            'Content-Type': 'application/json',
+            'Accept': 'audio/mpeg',
+        }
+        params = {
+            'model': voice_model,
+        }
+        payload = {
+            'text': text,
+        }
+        resp = requests.post('https://api.deepgram.com/v1/speak', headers=headers, params=params, json=payload)
+        if resp.status_code != 200:
+            return Response({'error': f'Deepgram error: {resp.text}'}, status=resp.status_code)
+
+        audio_bytes = resp.content
+        audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+        return Response({'audio': audio_b64, 'mime': 'audio/mpeg'})
     except Exception as e:
         return Response({'error': str(e)}, status=500)
 

@@ -199,3 +199,4 @@ DEFAULT_FROM_EMAIL = 'We_Talk Web <mushfiqurrahaman78@gmail.com>'
 
 # ChatGPT API Configuration
 OPENAI_API_KEY = os.getenv("CHATGPT_API_KEY")  # Replace with your actual OpenAI API key
+DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")

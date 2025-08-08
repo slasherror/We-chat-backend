@@ -4,7 +4,7 @@ from django.contrib.auth.models import User
 import json
 from .models import Chat, Message, KeyPair
 from chat.utils import encrypt_message, decrypt_final_audio, encrypt_final_audio
-from base64 import b64decode
+from base64 import b64decode, b64encode
 
 # ✅ Global presence tracker
 ONLINE_USERS = {}
@@ -88,12 +88,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
             )
 
         elif event_type == "message":
-            message = data["message"]
+            # Client now sends ciphertext already encrypted with chat public key
+            encrypted_message = data["message"]
             sender_id = self.scope["user"].id
             recipient_id = data["recipient"]
 
             sender = await database_sync_to_async(User.objects.get)(id=sender_id)
-            encrypted_message = encrypt_message(chat.public_key, message)
 
             new_message = await database_sync_to_async(Message.objects.create)(
                 chat=chat,
@@ -106,7 +106,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 {
                     "type": "chat_message",
                     "id": new_message.id,
-                    "message": message,
+                    "message": encrypted_message,
                     "sender": sender.id,
                     "recipient": recipient_id,
                 }
@@ -115,11 +115,21 @@ class ChatConsumer(AsyncWebsocketConsumer):
         elif event_type == "voice":
             sender_id = self.scope["user"].id
             recipient_id = data["recipient"]
-            audio_data = b64decode(data["voice"])
+
+            # Client sends encrypted payloads as base64 strings
+            encrypted_audio_b64 = data.get("encrypted_audio")
+            encrypted_aes_key_b64 = data.get("encrypted_aes_key")
+            iv_b64 = data.get("iv")
+
+            if not (encrypted_audio_b64 and encrypted_aes_key_b64 and iv_b64):
+                # Ignore malformed voice event
+                return
+
+            encrypted_audio = b64decode(encrypted_audio_b64)
+            encrypted_aes_key = b64decode(encrypted_aes_key_b64)
+            iv = b64decode(iv_b64)
 
             sender = await database_sync_to_async(User.objects.get)(id=sender_id)
-
-            encrypted_audio, encrypted_aes_key, iv = encrypt_final_audio(audio_data, chat.public_key)
 
             message = await database_sync_to_async(Message.objects.create)(
                 chat=chat,
@@ -130,17 +140,17 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 iv=iv
             )
 
-            decrypted_audio = decrypt_final_audio(encrypted_audio, encrypted_aes_key, iv, chat.private_key)
-
+            # Broadcast encrypted payload as-is; clients will decrypt
             await self.channel_layer.group_send(
                 self.chat_group_name,
                 {
                     'type': 'voice_messages',
                     'id': message.id,
                     'sender': sender_id,
-                    'message': '',
                     'recipient': recipient_id,
-                    'audio': decrypted_audio,
+                    'encrypted_audio': encrypted_audio_b64,
+                    'encrypted_aes_key': encrypted_aes_key_b64,
+                    'iv': iv_b64,
                 }
             )
 
@@ -160,7 +170,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps({
             "type": "message",
             "id": event["id"],
-            "text": event["message"],
+            "text": event["message"],  # ciphertext
             "voice_url": event.get("audio_url", ""),
             "sender": event["sender"],
         }))
@@ -170,7 +180,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "type": "voice_message",
             "id": event["id"],
             "text": "",
-            "audio": event["audio"],
+            "encrypted_audio": event["encrypted_audio"],
+            "encrypted_aes_key": event["encrypted_aes_key"],
+            "iv": event["iv"],
             "sender": event["sender"],
         }))
 
