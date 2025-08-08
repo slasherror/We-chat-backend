@@ -119,15 +119,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
             # Client sends encrypted payloads as base64 strings
             encrypted_audio_b64 = data.get("encrypted_audio")
             encrypted_aes_key_b64 = data.get("encrypted_aes_key")
-            iv_b64 = data.get("iv")
 
-            if not (encrypted_audio_b64 and encrypted_aes_key_b64 and iv_b64):
+            if not (encrypted_audio_b64 and encrypted_aes_key_b64):
                 # Ignore malformed voice event
                 return
 
             encrypted_audio = b64decode(encrypted_audio_b64)
             encrypted_aes_key = b64decode(encrypted_aes_key_b64)
-            iv = b64decode(iv_b64)
+
+            # Use static IV for all audio
+            iv = b"ANIK@&01NAFIUL#$"
 
             sender = await database_sync_to_async(User.objects.get)(id=sender_id)
 
@@ -136,8 +137,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 sender=sender,
                 text="",
                 encrypted_audio=encrypted_audio,
-                encrypted_aes_key=encrypted_aes_key,
-                iv=iv
+                encrypted_aes_key=encrypted_aes_key
             )
 
             # Broadcast encrypted payload as-is; clients will decrypt
@@ -150,7 +150,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'recipient': recipient_id,
                     'encrypted_audio': encrypted_audio_b64,
                     'encrypted_aes_key': encrypted_aes_key_b64,
-                    'iv': iv_b64,
+                    # Do NOT send IV
                 }
             )
 
@@ -182,7 +182,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "text": "",
             "encrypted_audio": event["encrypted_audio"],
             "encrypted_aes_key": event["encrypted_aes_key"],
-            "iv": event["iv"],
+            # Do NOT send IV
             "sender": event["sender"],
         }))
 

@@ -22,7 +22,6 @@ class Message(models.Model):
     encrypted_audio = models.BinaryField(blank=True, null=True)  # To store the encrypted audio
 
     encrypted_aes_key = models.BinaryField(blank=True, null=True)  # RSA-encrypted AES key
-    iv = models.BinaryField(blank=True, null=True)
 
     timestamp = models.DateTimeField(auto_now_add=True)
 

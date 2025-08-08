@@ -81,11 +81,11 @@ def get_chat_messages(request, chat_id):
             "voice_url": None,  # keep field for compatibility when playing decrypted audio in client
             "timestamp": message.timestamp.isoformat(),
         }
-        if message.encrypted_aes_key and message.encrypted_audio and message.iv:
+        if message.encrypted_aes_key and message.encrypted_audio:
             item.update({
                 "encrypted_audio": base64.b64encode(message.encrypted_audio).decode('utf-8'),
                 "encrypted_aes_key": base64.b64encode(message.encrypted_aes_key).decode('utf-8'),
-                "iv": base64.b64encode(message.iv).decode('utf-8'),
+                # Do NOT send IV
             })
         serialized.append(item)
 

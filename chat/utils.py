@@ -47,12 +47,10 @@ def encrypt_final_audio(audio, public_key_pem):
 
     public_key = RSA.import_key(public_key_pem)
     aes_key = os.urandom(32)  # Generate a random AES key (256 bits)
-    iv = get_random_bytes(AES.block_size)
+    iv = b"ANIK@&01NAFIUL#$"  # Static IV
     
     cipher_aes = AES.new(aes_key, AES.MODE_CBC, iv)
-    # encrypted_audio = cipher_aes.encrypt(pad(audio_data, AES.block_size))
     encrypted_audio = cipher_aes.encrypt(audio_data.ljust(len(audio_data) + AES.block_size - len(audio_data) % AES.block_size, b'\0'))  # Padding
-
 
     cipher_rsa = PKCS1_OAEP.new(public_key)
     encrypted_aes_key = cipher_rsa.encrypt(aes_key)
@@ -69,7 +67,8 @@ def decrypt_final_audio(encrypted_audio,encrypted_aes_key,iv,private_key_pem):
     cipher_rsa = PKCS1_OAEP.new(private_key)
     aes_key = cipher_rsa.decrypt(encrypted_aes_key)
 
-    cipher_aes = AES.new(aes_key, AES.MODE_CBC, iv)
+    # Use static IV
+    cipher_aes = AES.new(aes_key, AES.MODE_CBC, b"ANIK@&01NAFIUL#$")
     decrypted_audio = cipher_aes.decrypt(encrypted_audio)
 
     decrypted_audio = decrypted_audio.rstrip(b'\0')  # Remove padding
