@@ -88,19 +88,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
             )
 
         elif event_type == "message":
-            # Client now sends ciphertext already encrypted with chat public key
             encrypted_message = data["message"]
             sender_id = self.scope["user"].id
             recipient_id = data["recipient"]
-
             sender = await database_sync_to_async(User.objects.get)(id=sender_id)
-
             new_message = await database_sync_to_async(Message.objects.create)(
                 chat=chat,
                 sender=sender,
                 text=encrypted_message
             )
-
             await self.channel_layer.group_send(
                 self.chat_group_name,
                 {
@@ -115,23 +111,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
         elif event_type == "voice":
             sender_id = self.scope["user"].id
             recipient_id = data["recipient"]
-
-            # Client sends encrypted payloads as base64 strings
             encrypted_audio_b64 = data.get("encrypted_audio")
             encrypted_aes_key_b64 = data.get("encrypted_aes_key")
-
             if not (encrypted_audio_b64 and encrypted_aes_key_b64):
-                # Ignore malformed voice event
                 return
-
             encrypted_audio = b64decode(encrypted_audio_b64)
             encrypted_aes_key = b64decode(encrypted_aes_key_b64)
-
-            # Use static IV for all audio
-            iv = b"ANIK@&01NAFIUL#$"
-
             sender = await database_sync_to_async(User.objects.get)(id=sender_id)
-
             message = await database_sync_to_async(Message.objects.create)(
                 chat=chat,
                 sender=sender,
@@ -139,8 +125,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 encrypted_audio=encrypted_audio,
                 encrypted_aes_key=encrypted_aes_key
             )
-
-            # Broadcast encrypted payload as-is; clients will decrypt
             await self.channel_layer.group_send(
                 self.chat_group_name,
                 {
@@ -150,7 +134,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'recipient': recipient_id,
                     'encrypted_audio': encrypted_audio_b64,
                     'encrypted_aes_key': encrypted_aes_key_b64,
-                    # Do NOT send IV
                 }
             )
 
@@ -165,6 +148,39 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     "sender": sender,
                 }
             )
+
+        elif event_type == "reaction":
+            message_id = data.get("message_id")
+            reaction = data.get("reaction")
+            sender_id = self.scope["user"].id
+            if message_id is not None:
+                # Update DB
+                try:
+                    message = await database_sync_to_async(Message.objects.get)(id=message_id)
+                    if reaction:
+                        message.reaction = reaction
+                    else:
+                        message.reaction = None
+                    await database_sync_to_async(message.save)()
+                except Exception:
+                    pass
+                # Broadcast to all clients in chat
+                await self.channel_layer.group_send(
+                    self.chat_group_name,
+                    {
+                        "type": "chat_reaction",
+                        "message_id": message_id,
+                        "reaction": reaction,
+                        "sender": sender_id,
+                    }
+                )
+    async def chat_reaction(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "reaction",
+            "message_id": event["message_id"],
+            "reaction": event["reaction"],
+            "sender": event["sender"],
+        }))
 
     async def chat_message(self, event):
         await self.send(text_data=json.dumps({

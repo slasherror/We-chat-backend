@@ -1,3 +1,4 @@
+
 from django.contrib.auth.models import User
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -19,6 +20,20 @@ from rest_framework.permissions import IsAuthenticated
 import json
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
+
+@api_view(["POST"])
+def set_message_reaction(request):
+    message_id = request.data.get("message_id")
+    reaction = request.data.get("reaction")
+    if not message_id or not reaction:
+        return Response({"error": "Missing message_id or reaction"}, status=400)
+    try:
+        message = Message.objects.get(id=message_id)
+        message.reaction = reaction
+        message.save()
+        return Response({"success": True, "message_id": message_id, "reaction": reaction})
+    except Message.DoesNotExist:
+        return Response({"error": "Message not found"}, status=404)
 
 @api_view(["GET"])
 def search_users(request):
@@ -80,12 +95,14 @@ def get_chat_messages(request, chat_id):
             "text": message.text or "",  # ciphertext if present
             "voice_url": None,  # keep field for compatibility when playing decrypted audio in client
             "timestamp": message.timestamp.isoformat(),
+            "reaction": message.reaction if hasattr(message, 'reaction') else ""
         }
         if message.encrypted_aes_key and message.encrypted_audio:
             item.update({
                 "encrypted_audio": base64.b64encode(message.encrypted_audio).decode('utf-8'),
                 "encrypted_aes_key": base64.b64encode(message.encrypted_aes_key).decode('utf-8'),
                 # Do NOT send IV
+                "reaction": message.reaction if hasattr(message, 'reaction') else ""
             })
         serialized.append(item)
 

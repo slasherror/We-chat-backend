@@ -20,9 +20,8 @@ class Message(models.Model):
     text = models.TextField()
     voice_message = models.FileField(upload_to="voice_messages/", blank=True, null=True)
     encrypted_audio = models.BinaryField(blank=True, null=True)  # To store the encrypted audio
-
     encrypted_aes_key = models.BinaryField(blank=True, null=True)  # RSA-encrypted AES key
-
+    reaction = models.CharField(max_length=8, blank=True, null=True)  # Emoji or reaction string
     timestamp = models.DateTimeField(auto_now_add=True)
 
     def encrypted_audio_length(self):

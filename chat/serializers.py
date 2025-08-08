@@ -7,7 +7,7 @@ class MessageSerializer(serializers.ModelSerializer):
     voice_url = serializers.SerializerMethodField()
     class Meta:
         model = Message
-        fields = ['id', 'sender', 'text', 'voice_url', 'voice_message','timestamp']
+        fields = ['id', 'sender', 'text', 'voice_url', 'voice_message', 'timestamp', 'reaction']
 
     
     def get_voice_url(self, obj):
